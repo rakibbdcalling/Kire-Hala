@@ -6,9 +6,11 @@ def format_title(title, brand, part_number):
     Format the title using the criteria:
     Brand name + product type + motorcycle model or automobile model + year + part number.
     """
+    if not isinstance(title, str):
+        title = ""
     title = title.strip().upper()
     brand = brand.strip().upper() if pd.notna(brand) else ""
-    part_number = str(part_number).strip().upper() if pd.notna(part_number) else ""  # Convert to string before using strip()
+    part_number = str(part_number).strip().upper() if pd.notna(part_number) else ""
     
     # Remove duplicate brand name and part number
     if brand and brand in title:
@@ -27,6 +29,9 @@ def format_description(description, brand, part_number):
     """
     Format the description with the specified formatting rules.
     """
+    if not isinstance(description, str):
+        description = ""
+    
     lines = description.split('\n')
     if not lines:
         return ""
@@ -72,9 +77,15 @@ def format_description(description, brand, part_number):
 df = pd.read_excel("input.xlsx")
 df.columns = df.columns.str.strip()  # Remove extra spaces from column names
 
-# Ensure "Part Number" column exists
+# Ensure necessary columns exist
 if "Part Number" not in df.columns:
     df["Part Number"] = ""
+if "Brand" not in df.columns:
+    df["Brand"] = ""
+if "Title" not in df.columns:
+    df["Title"] = ""
+if "Description" not in df.columns:
+    df["Description"] = ""
 
 # Process each row
 df["Formatted Title"] = df.apply(lambda row: format_title(row["Title"], row["Brand"], row["Part Number"]), axis=1)
