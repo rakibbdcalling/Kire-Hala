@@ -6,18 +6,19 @@ import json
 
 app = Flask(__name__)
 
+# Helper function to extract emails from a given URL
 def extract_emails_from_page(url):
-    """Helper function to extract emails from a given URL."""
     response = requests.get(url)
     page_content = response.text
     emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', page_content)
     
     # Filter out unwanted emails
-    blacklist = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
-    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist)]
+    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
+    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
     
     return filtered_emails
 
+# Extract data function to get emails and social media profiles
 def extract_data(url):
     print(f"Extracting data from: {url}")  # Debugging
 
@@ -52,23 +53,59 @@ def extract_data(url):
     # Combine all extracted text sources
     combined_text = f"{all_text} {attribute_texts} {' '.join(json_social_links)}"
 
-    # Extract social media profiles
+    # Social media profile patterns
     social_media_patterns = {
         "instagram": r'https?://(?:www\.)?instagram\.com/@?[\w.-]+',
         "facebook": r'https?://(?:www\.)?facebook\.com/(?!tr\?id=)[\w.-]+',
-        "youtube": r'https?://(?:www\.)?youtube\.com/@?[\w.-]+',
-        "linkedin": r'https?://(?:[a-zA-Z]{2,3}\.)?linkedin\.com/(?:in|company)/[\w.-]+',
-        "twitter": r'https?://(?:www\.)?twitter\.com/@?[\w.-]+',
+        "youtube": r'https?://(?:www\.)?youtube\.com/(?:@[\w.-]+|channel/[\w-]+|user/[\w.-]+|c/[\w.-]+)',  # Added 'c/' for custom URLs
+        "linkedin": r'https?://(?:www\.)?linkedin\.com/(?:in|company|edu|school)/[\w.-]+(?:\?[^\s]+)?',
+        "twitter": r'https?://(?:www\.)?(?:twitter\.com|x\.com)/@?[\w.-]+',
         "tiktok": r'https?://(?:www\.)?tiktok\.com/@[\w.-]+'
     }
-    
-    # Extract social media profiles and make them unique by converting to sets
-    social_data = {platform: ", ".join(sorted(set(re.findall(pattern, combined_text)))) for platform, pattern in social_media_patterns.items()}
+
+    # Blacklist for social media links to exclude unnecessary URLs
+    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
+    blacklist_facebook = ['/plugins', '/embed', 'facebook.com/tr?id=', '/2008']
+    blacklist_instagram = ['/explore/', 'instagram.com/p/', 'instagram.com/stories/', 'instagram.com/accounts/']
+    blacklist_twitter = ['/search', 'twitter.com/explore', 'twitter.com/i/', '/intent']
+    blacklist_linkedin = ['/jobs']
+    blacklist_youtube = ['/shorts', '/music']
+    blacklist_tiktok = ['/video/', '/discover', 'tiktok.com/hashtag/']
+
+    # Extract and filter social media profiles
+    social_data = {}
+
+    # For anchor tags <a> with 'social-link' class, specifically extract YouTube user URLs
+    youtube_links_from_a_tags = set()
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag['href']
+        if 'youtube.com/c/' in href:  # Matching YouTube custom channel URLs
+            youtube_links_from_a_tags.add(href)
+
+    # Combine these with the general YouTube search (channel/ and @ username formats)
+    found_links = set(re.findall(social_media_patterns["youtube"], combined_text)) | youtube_links_from_a_tags
+    found_links = {link for link in found_links if not any(black in link for black in blacklist_youtube)}
+    social_data['youtube'] = ", ".join(sorted(found_links))
+
+    # Extract other social media links based on patterns
+    for platform, pattern in social_media_patterns.items():
+        if platform != "youtube":
+            found_links = set(re.findall(pattern, combined_text))
+            if platform == "facebook":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_facebook)}
+            elif platform == "instagram":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_instagram)}
+            elif platform == "twitter":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_twitter)}
+            elif platform == "linkedin":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_linkedin)}
+            elif platform == "tiktok":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_tiktok)}
+            social_data[platform] = ", ".join(sorted(found_links))
 
     # Extract and filter email addresses
     emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined_text)))
-    blacklist = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
-    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist)]
+    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
 
     # If no email is found, check contact pages
     if not filtered_emails:
