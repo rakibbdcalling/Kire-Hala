@@ -58,12 +58,12 @@ def extract_data(url):
         "facebook": r'https?://(?:www\.)?facebook\.com/(?!tr\?id=)[\w.-]+',
         "youtube": r'https?://(?:www\.)?youtube\.com/@?[\w.-]+',
         "linkedin": r'https?://(?:[a-zA-Z]{2,3}\.)?linkedin\.com/(?:in|company)/[\w.-]+',
-        "twitter": r'https?://(?:www\.)?twitter\.com/@?[\w.-]+',  # Update here to support '@' in Twitter URLs
+        "twitter": r'https?://(?:www\.)?twitter\.com/@?[\w.-]+',
         "tiktok": r'https?://(?:www\.)?tiktok\.com/@[\w.-]+'
     }
     
-    # Extract social media profiles
-    social_data = {platform: ", ".join(set(re.findall(pattern, combined_text))) for platform, pattern in social_media_patterns.items()}
+    # Extract social media profiles and make them unique by converting to sets
+    social_data = {platform: ", ".join(sorted(set(re.findall(pattern, combined_text)))) for platform, pattern in social_media_patterns.items()}
 
     # Extract and filter email addresses
     emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined_text)))
@@ -83,7 +83,7 @@ def extract_data(url):
 
     extracted_data = {
         "website": url,
-        "email": ", ".join(filtered_emails),
+        "email": ", ".join(sorted(set(filtered_emails))),
         **social_data
     }
 
