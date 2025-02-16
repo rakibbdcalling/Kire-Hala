@@ -109,7 +109,7 @@ def extract_data(url):
 
     # If no email is found, check contact pages
     if not filtered_emails:
-        contact_pages = ["/contact-us", "/contact"]
+        contact_pages = ["/contact-us", "/contact", "/contacts"]
         for page in contact_pages:
             contact_url = url.rstrip('/') + page
             print(f"Checking contact page: {contact_url}")
