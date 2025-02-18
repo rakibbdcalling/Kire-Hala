@@ -64,7 +64,7 @@ def extract_data(url):
     }
 
     # Blacklist for social media links to exclude unnecessary URLs
-    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
+    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company"]
     blacklist_facebook = ['/plugins', '/embed', 'facebook.com/tr?id=', '/2008']
     blacklist_instagram = ['/explore/', 'instagram.com/p/', 'instagram.com/stories/', 'instagram.com/accounts/']
     blacklist_twitter = ['/search', 'twitter.com/explore', 'twitter.com/i/', '/intent']
