@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Extractor</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h1>Phone Extractor</h1>
+
+    <form id="extractForm">
+        <textarea name="urls" id="urls" rows="5" placeholder="Enter websites (one per line)"></textarea>
+        <button type="submit">Extract Data</button>
+    </form>
+
+    <p id="loadingMessage" style="display: none; font-weight: bold;"></p>
+    <progress id="progressBar" value="0" max="100" style="width: 100%; display: none;"></progress>
+
+    <div style="margin-top: 20px;">
+        <button id="exportJSON">Export as JSON</button>
+        <button id="exportCSV">Export as CSV</button>
+        <button id="exportExcel">Export as Excel</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Website</th>
+                <th>Phone</th>
+                <th>Email</th>
+            </tr>
+        </thead>
+        <tbody id="results"></tbody>
+    </table>
+
+    <script>
+        let extractedData = [];
+
+        document.getElementById("extractForm").addEventListener("submit", async function(event) {
+            event.preventDefault();
+            document.getElementById("results").innerHTML = "";
+
+            const formData = new FormData(this);
+            const urls = formData.get("urls").split("\n").map(url => url.trim()).filter(url => url);
+            
+            const loadingMessage = document.getElementById("loadingMessage");
+            const progressBar = document.getElementById("progressBar");
+            let remaining = urls.length;
+            let total = urls.length;
+
+            if (remaining > 0) {
+                loadingMessage.style.display = "block";
+                progressBar.style.display = "block";
+                loadingMessage.innerText = `Processing... ${remaining} websites remaining`;
+                progressBar.value = 0;
+                progressBar.max = total;
+            }
+
+            for (const url of urls) {
+                try {
+                    const response = await fetch("/extract", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ url: url })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+
+                        // Check if this website is already in the extractedData array
+                        if (!extractedData.some(existingData => existingData.website === data.website)) {
+                            extractedData.push(data);
+                            const row = `<tr>
+                                <td>${data.website}</td>
+                                <td>${data.phone}</td>
+                                <td>${data.email}</td>
+                            </tr>`;
+                            document.getElementById("results").innerHTML += row;
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Error processing ${url}:`, error);
+                }
+
+                remaining--;
+                progressBar.value = total - remaining;
+                loadingMessage.innerText = remaining > 0 ? `Processing... ${remaining} websites remaining` : "Processing complete!";
+
+                if (remaining === 0) {
+                    setTimeout(() => {
+                        loadingMessage.style.display = "none";
+                        progressBar.style.display = "none";
+                    }, 2000);
+                }
+            }
+
+            setTimeout(() => {
+                exportExcel();
+            }, 2000);
+        });
+
+        function exportExcel() {
+            const orderedData = extractedData.map(item => ({
+                website: item.website,
+                phone: item.phone,
+                email: item.email
+            }));
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(orderedData);
+            XLSX.utils.book_append_sheet(wb, ws, 'Extracted Data');
+            XLSX.writeFile(wb, 'email_phone_links.xlsx');
+        }
+
+        document.getElementById('exportExcel').addEventListener('click', exportExcel);
+
+        document.getElementById('exportJSON').addEventListener('click', function() {
+            const dataStr = JSON.stringify(extractedData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'email_phone_links.json';
+            a.click();
+        });
+
+        document.getElementById('exportCSV').addEventListener('click', function() {
+            const csvRows = ["Website,Phone,Email"];
+            extractedData.forEach(row => {
+                csvRows.push(`${row.website},"${row.phone}","${row.email}"`);
+            });
+
+            const csvData = csvRows.join('\n');
+            const blob = new Blob([csvData], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'email_phone_links.csv';
+            a.click();
+        });
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</body>
+</html>
