@@ -1,144 +1,132 @@
-from flask import Flask, request, render_template, jsonify
-import requests
-import re
-from bs4 import BeautifulSoup
-import json
+import chromedriver_autoinstaller
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import NoAlertPresentException
+import pandas as pd
+import os
+import time
 
-app = Flask(__name__)
+# Setup ChromeDriver
+custom_path = os.path.join(os.getcwd(), "chromedriver")
+os.makedirs(custom_path, exist_ok=True)
+chromedriver_autoinstaller.install(path=custom_path)
 
-# Helper function to extract emails from a given URL
-def extract_emails_from_page(url):
-    response = requests.get(url)
-    page_content = response.text
-    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', page_content)
-    
-    # Filter out unwanted emails
-    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "abuse@"]
-    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
-    
-    return filtered_emails
+# Load data
+data = pd.read_excel("data.xlsx", dtype={'incoming_date': str, 'delivery_last_date': str})
+total_rows = len(data)
 
-# Extract data function to get emails and social media profiles
-def extract_data(url):
-    print(f"Extracting data from: {url}")  # Debugging
+# Start WebDriver
+driver = webdriver.Chrome()
+driver.get("https://www.bdcallingit.com/web/login")
 
-    # Get the raw HTML of the page
-    response = requests.get(url)
-    page_source = response.text
+# Login
+driver.find_element(By.ID, "login").send_keys("officesmtsales@gmail.com")
+driver.find_element(By.ID, "password").send_keys("smtechnology")
+driver.find_element(By.CSS_SELECTOR, "button.btn.btn-primary").click()
+time.sleep(2)
 
-    soup = BeautifulSoup(page_source, 'html.parser')
+wait = WebDriverWait(driver, 5)
 
-    # Extract JSON-LD data (structured data)
-    json_ld_data = []
-    for script in soup.find_all("script", type="application/ld+json"):
+# Function to handle unexpected alerts
+def handle_alert():
+    try:
+        alert = driver.switch_to.alert
+        print("Alert detected:", alert.text)
+        alert.dismiss()
+    except NoAlertPresentException:
+        pass  
+
+# Log file setup
+with open("log_results.txt", "a") as log_file:
+    remaining_rows = total_rows  # Initialize remaining rows count
+
+    for index, row in data.iterrows():
+        print(f"Remaining: {remaining_rows}")
+
+        driver.get("https://www.bdcallingit.com/portal/sales/create")
+        
+        # Ensure sales_employee_id is not empty
+        sales_employee_id = str(row.get("sales_employee_id", "")).strip()
+        if not sales_employee_id:
+            log_file.write(f"{row['order_number']} - Missing Sales Employee ID\n")
+            remaining_rows -= 1  # Update remaining count
+            print(f"Remaining rows after processing: {remaining_rows}")
+            continue  
+
+        # Fill form fields
+        driver.find_element(By.ID, "sales_employee_id").send_keys(sales_employee_id)
+        driver.find_element(By.ID, "platform_source").send_keys(str(row["platform_source"]))
+        driver.find_element(By.NAME, "order_source_id").send_keys(row["order_source_id"])
+        driver.find_element(By.ID, "profile_name").send_keys(row["profile_name"])
+
+        driver.find_element(By.ID, "tags").click()
+        driver.find_element(By.XPATH, f'//*[@data-value="{row["tags"]}"]').click()
+        driver.find_element(By.ID, "tags").click()
+
+        driver.find_element(By.ID, "btn_add_new_client").click()
+        driver.find_element(By.ID, "a_client_user_name").send_keys(row["client_user_id"])
+        driver.find_element(By.ID, "a_country_id").send_keys("United States")
+        driver.find_element(By.ID, "btn_create_new_client").click()
+
+        driver.find_element(By.CSS_SELECTOR, ".btn.btn-danger").click()
+        time.sleep(1)
+
+        driver.find_element(By.ID, "client_user_id").clear()
+        driver.find_element(By.ID, "client_user_id").send_keys(row["client_user_id"])
+
+        order_number = row["order_number"]
+        driver.find_element(By.NAME, "order_number").send_keys(order_number)
+
         try:
-            json_data = json.loads(script.string)
-            if isinstance(json_data, list):
-                json_ld_data.extend(json_data)
-            else:
-                json_ld_data.append(json_data)
-        except (json.JSONDecodeError, TypeError):
-            continue
+            error_element = wait.until(EC.visibility_of_element_located((By.ID, "order_number_error")))
+            if "Already Exists" in error_element.text:
+                order_number += "_1"
+                driver.find_element(By.NAME, "order_number").clear()
+                driver.find_element(By.NAME, "order_number").send_keys(order_number)
+                time.sleep(2)
+                error_element = driver.find_element(By.ID, "order_number_error")
+                if "Already Exists" in error_element.text:
+                    order_number = row["order_number"] + "_2"
+                    driver.find_element(By.NAME, "order_number").clear()
+                    driver.find_element(By.NAME, "order_number").send_keys(order_number)
+        except:
+            pass  
 
-    # Extract social media profiles from JSON-LD
-    json_social_links = []
-    for item in json_ld_data:
-        if isinstance(item, dict) and "sameAs" in item:
-            json_social_links.extend(item.get("sameAs", []))
+        driver.find_element(By.ID, "order_link").send_keys(row["order_link"])
+        driver.find_element(By.NAME, "instruction_sheet_link").send_keys(row["instruction_sheet_link"])
+        driver.find_element(By.ID, "service_type_id").send_keys(row["service_type_id"])
 
-    # Extract all visible text and attribute values
-    all_text = soup.get_text(separator=' ', strip=True)
-    attribute_texts = ' '.join(attr for tag in soup.find_all() for attr in tag.attrs.values() if isinstance(attr, str))
+        try:
+            incoming_date = f"{int(row['incoming_date']):08d}"
+            delivery_last_date = f"{int(row['delivery_last_date']):08d}"
+        except ValueError:
+            log_file.write(f"{order_number} - Invalid date format\n")
+            remaining_rows -= 1  
+            print(f"Remaining rows after processing: {remaining_rows}")
+            continue  
 
-    # Combine all extracted text sources
-    combined_text = f"{all_text} {attribute_texts} {' '.join(json_social_links)}"
+        driver.find_element(By.NAME, "incoming_date").send_keys(incoming_date)
+        driver.find_element(By.NAME, "delivery_last_date").send_keys(delivery_last_date, Keys.TAB, "1111p")
 
-    # Social media profile patterns
-    social_media_patterns = {
-        "instagram": r'https?://(?:www\.)?instagram\.com/@?[\w.-]+',
-        "facebook": r'https?://(?:www\.)?facebook\.com/(?!tr\?id=)[\w.-]+',
-        "youtube": r'https?://(?:www\.)?youtube\.com/(?:@[\w.-]+|channel/[\w-]+|user/[\w.-]+|c/[\w.-]+)',  # Added 'c/' for custom URLs
-        "linkedin": r'https?://(?:www\.)?linkedin\.com/(?:in|company|edu|school)/[\w.-]+(?:\?[^\s]+)?',
-        "twitter": r'https?://(?:www\.)?(?:twitter\.com|x\.com)/@?[\w.-]+',
-        "tiktok": r'https?://(?:www\.)?tiktok\.com/@[\w.-]+'
-    }
+        driver.find_element(By.ID, "amount").clear()
+        driver.find_element(By.ID, "amount").send_keys(str(row["amount"]))
+        driver.find_element(By.ID, "percentage").send_keys(str(row["percentage"]))
 
-    # Blacklist for social media links to exclude unnecessary URLs
-    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company", "abuse@"]
-    blacklist_facebook = ['/plugins', '/embed', 'facebook.com/tr?id=', '/2008', '/business']
-    blacklist_instagram = ['/explore/', 'instagram.com/p/', 'instagram.com/stories/', 'instagram.com/accounts/']
-    blacklist_twitter = ['/search', 'twitter.com/explore', 'twitter.com/i/', '/intent']
-    blacklist_linkedin = ['/jobs']
-    blacklist_youtube = ['/shorts', '/music']
-    blacklist_tiktok = ['/video/', '/discover', 'tiktok.com/hashtag/']
+        driver.find_element(By.CSS_SELECTOR, ".button.button-primary.px-5.py-2").click()
+        time.sleep(1)
 
-    # Extract and filter social media profiles
-    social_data = {}
+        handle_alert()
 
-    # For anchor tags <a> with 'social-link' class, specifically extract YouTube user URLs
-    youtube_links_from_a_tags = set()
-    for a_tag in soup.find_all('a', href=True):
-        href = a_tag['href']
-        if 'youtube.com/c/' in href:  # Matching YouTube custom channel URLs
-            youtube_links_from_a_tags.add(href)
+        try:
+            wait.until(EC.url_contains("/portal/sales/create/status"))
+        except:
+            log_file.write(f"{order_number} - Submission failed\n")
 
-    # Combine these with the general YouTube search (channel/ and @ username formats)
-    found_links = set(re.findall(social_media_patterns["youtube"], combined_text)) | youtube_links_from_a_tags
-    found_links = {link for link in found_links if not any(black in link for black in blacklist_youtube)}
-    social_data['youtube'] = ", ".join(sorted(found_links))
+        remaining_rows -= 1  # Update remaining count after successful row processing
+        print(f"Remaining rows after processing: {remaining_rows}")
 
-    # Extract other social media links based on patterns
-    for platform, pattern in social_media_patterns.items():
-        if platform != "youtube":
-            found_links = set(re.findall(pattern, combined_text))
-            if platform == "facebook":
-                found_links = {link for link in found_links if not any(black in link for black in blacklist_facebook)}
-            elif platform == "instagram":
-                found_links = {link for link in found_links if not any(black in link for black in blacklist_instagram)}
-            elif platform == "twitter":
-                found_links = {link for link in found_links if not any(black in link for black in blacklist_twitter)}
-            elif platform == "linkedin":
-                found_links = {link for link in found_links if not any(black in link for black in blacklist_linkedin)}
-            elif platform == "tiktok":
-                found_links = {link for link in found_links if not any(black in link for black in blacklist_tiktok)}
-            social_data[platform] = ", ".join(sorted(found_links))
-
-    # Extract and filter email addresses
-    emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined_text)))
-    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
-
-    # If no email is found, check contact pages
-    if not filtered_emails:
-        contact_pages = ["/contact-us", "/contact", "/contacts"]
-        for page in contact_pages:
-            contact_url = url.rstrip('/') + page
-            print(f"Checking contact page: {contact_url}")
-            contact_emails = extract_emails_from_page(contact_url)
-            if contact_emails:
-                filtered_emails = contact_emails
-                break
-
-    extracted_data = {
-        "website": url,
-        "email": ", ".join(sorted(set(filtered_emails))),
-        **social_data
-    }
-
-    print("Extracted Data:", extracted_data)  # Debugging output
-    return extracted_data
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/extract', methods=['POST'])
-def extract():
-    url = request.json.get("url")
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
-    
-    data = extract_data(url)
-    return jsonify(data)
-
-if __name__ == "__main__":
-    app.run(debug=True)
+driver.quit()
+print("Processing completed for all rows.")
