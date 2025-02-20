@@ -1,131 +1,130 @@
 from flask import Flask, request, render_template, jsonify
 import requests
-from bs4 import BeautifulSoup
 import re
-from urllib.parse import urljoin, unquote
+from bs4 import BeautifulSoup
+import json
 
 app = Flask(__name__)
 
-# List of keywords to search for in contact-related URLs
-CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
-
-# Blacklist for email
-blacklist_emails = [", ", ".png", ".jpg", "@example", "domain", "jane.doe@", "jdoe@", "john.doe", "first@", "last@", ".svg", ".webp", "sentry", "company", ".jped", "?", "%", "(", ")", "<", ">", ";", ":", "[", "]", "{", "}", "\\", "|", '"', "'", "!", "#", "$", "^", "&", "*" ]
-# Regex pattern to match emails
-EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zAZ0-9.-]+\.[a-zA-Z]{2,})')
-
-def format_phone_number(phone):
-    """Format phone numbers based on the given rules."""
-    digits = re.sub(r'\D', '', phone)  # Remove all non-numeric characters
+# Helper function to extract emails from a given URL
+def extract_emails_from_page(url):
+    response = requests.get(url)
+    page_content = response.text
+    emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', page_content)
     
-    if len(digits) == 11 and digits.startswith("1"):
-        digits = digits[1:]  # Remove leading '1'
+    # Filter out unwanted emails
+    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
+    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
     
-    if len(digits) == 10:
-        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"  # Format as (000) 000-0000
-    
-    return phone  # Return the phone number as is if it doesn't meet the criteria
+    return filtered_emails
 
-def extract_phone_from_soup(soup):
-    """Extract phone numbers from any href="tel:..." and format them properly."""
-    phone_links = set()
+# Extract data function to get emails and social media profiles
+def extract_data(url):
+    print(f"Extracting data from: {url}")  # Debugging
 
-    # Extract phone numbers from any href="tel:..." occurrences
-    for element in soup.find_all(href=True):
-        href = element['href']
-        if href.startswith("tel:"):
-            # Extract the phone number, decode URL encoding, and replace %20 with a space
-            phone = href[4:].strip()
-            phone = unquote(phone).replace("%20", " ")  # Decode URL encoding & replace %20 with space
-            
-            # Format the phone number based on the given rules
-            formatted_phone = format_phone_number(phone)
-            
-            # Check if the phone number has at least 5 digits
-            digits_only = re.sub(r'\D', '', formatted_phone)  # Remove all non-numeric characters
-            if len(digits_only) >= 5:
-                phone_links.add(formatted_phone)
-
-    return phone_links
-
-def extract_email_from_soup(soup):
-    """Extract emails from mailto links and text using regex."""
-    email_links = set()
-
-    # Extract emails from <a href="mailto:..."> links
-    for a in soup.find_all('a', href=True):
-        href = a['href']
-        if href.startswith("mailto:"):
-            email = href[7:].strip()
-            if not any(black in email for black in blacklist_emails):  # Apply blacklist filter here
-                email_links.add(email)
-
-    # Extract emails from visible text using regex
-    text = soup.get_text(" ", strip=True)
-    matches = EMAIL_REGEX.findall(text)
-    for match in matches:
-        if not any(black in match for black in blacklist_emails):  # Apply blacklist filter here
-            email_links.add(match)
-
-    return email_links
-
-def extract_phone_and_email(url):
-    print(f"Extracting phone and email from: {url}")  # Debugging
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/90.0.4430.93 Safari/537.36"
-        )
-    }
-
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return {"website": url, "phone": "", "email": ""}
-
+    # Get the raw HTML of the page
+    response = requests.get(url)
     page_source = response.text
+
     soup = BeautifulSoup(page_source, 'html.parser')
 
-    # Extract phone numbers and emails
-    phone_links = extract_phone_from_soup(soup)
-    email_links = extract_email_from_soup(soup)
+    # Extract JSON-LD data (structured data)
+    json_ld_data = []
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            json_data = json.loads(script.string)
+            if isinstance(json_data, list):
+                json_ld_data.extend(json_data)
+            else:
+                json_ld_data.append(json_data)
+        except (json.JSONDecodeError, TypeError):
+            continue
 
-    # If no phone numbers or emails found on the main page, check contact pages
-    if not phone_links or not email_links:
-        print("No phone numbers or emails found on main page; checking contact pages...")
-        contact_links = set()
-        for a in soup.find_all('a', href=True):
-            href = a['href'].lower()
-            if any(keyword in href for keyword in CONTACT_KEYWORDS):
-                full_url = urljoin(url, a['href'])
-                contact_links.add(full_url)
+    # Extract social media profiles from JSON-LD
+    json_social_links = []
+    for item in json_ld_data:
+        if isinstance(item, dict) and "sameAs" in item:
+            json_social_links.extend(item.get("sameAs", []))
 
-        for contact_url in contact_links:
-            try:
-                print(f"Checking contact page: {contact_url}")
-                contact_resp = requests.get(contact_url, headers=headers, timeout=10)
-                contact_soup = BeautifulSoup(contact_resp.text, 'html.parser')
-                contact_phones = extract_phone_from_soup(contact_soup)
-                contact_emails = extract_email_from_soup(contact_soup)
+    # Extract all visible text and attribute values
+    all_text = soup.get_text(separator=' ', strip=True)
+    attribute_texts = ' '.join(attr for tag in soup.find_all() for attr in tag.attrs.values() if isinstance(attr, str))
 
-                # Combine phone numbers and emails from contact pages
-                phone_links = phone_links.union(contact_phones)
-                email_links = email_links.union(contact_emails)
-            except Exception as e:
-                print(f"Error fetching contact page {contact_url}: {e}")
-                continue
+    # Combine all extracted text sources
+    combined_text = f"{all_text} {attribute_texts} {' '.join(json_social_links)}"
 
-    # Final extracted data, excluding blacklisted emails
-    extracted_data = {
-        "website": url,
-        "phone": ", ".join(sorted(phone_links)),
-        "email": ", ".join(sorted(email_links))
+    # Social media profile patterns
+    social_media_patterns = {
+        "instagram": r'https?://(?:www\.)?instagram\.com/@?[\w.-]+',
+        "facebook": r'https?://(?:www\.)?facebook\.com/(?!tr\?id=)[\w.-]+',
+        "youtube": r'https?://(?:www\.)?youtube\.com/(?:@[\w.-]+|channel/[\w-]+|user/[\w.-]+|c/[\w.-]+)',  # Added 'c/' for custom URLs
+        "linkedin": r'https?://(?:www\.)?linkedin\.com/(?:in|company|edu|school)/[\w.-]+(?:\?[^\s]+)?',
+        "twitter": r'https?://(?:www\.)?(?:twitter\.com|x\.com)/@?[\w.-]+',
+        "tiktok": r'https?://(?:www\.)?tiktok\.com/@[\w.-]+'
     }
 
-    print("Extracted Data:", extracted_data)
+    # Blacklist for social media links to exclude unnecessary URLs
+    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company"]
+    blacklist_facebook = ['/plugins', '/embed', 'facebook.com/tr?id=', '/2008', '/business']
+    blacklist_instagram = ['/explore/', 'instagram.com/p/', 'instagram.com/stories/', 'instagram.com/accounts/']
+    blacklist_twitter = ['/search', 'twitter.com/explore', 'twitter.com/i/', '/intent']
+    blacklist_linkedin = ['/jobs']
+    blacklist_youtube = ['/shorts', '/music']
+    blacklist_tiktok = ['/video/', '/discover', 'tiktok.com/hashtag/']
+
+    # Extract and filter social media profiles
+    social_data = {}
+
+    # For anchor tags <a> with 'social-link' class, specifically extract YouTube user URLs
+    youtube_links_from_a_tags = set()
+    for a_tag in soup.find_all('a', href=True):
+        href = a_tag['href']
+        if 'youtube.com/c/' in href:  # Matching YouTube custom channel URLs
+            youtube_links_from_a_tags.add(href)
+
+    # Combine these with the general YouTube search (channel/ and @ username formats)
+    found_links = set(re.findall(social_media_patterns["youtube"], combined_text)) | youtube_links_from_a_tags
+    found_links = {link for link in found_links if not any(black in link for black in blacklist_youtube)}
+    social_data['youtube'] = ", ".join(sorted(found_links))
+
+    # Extract other social media links based on patterns
+    for platform, pattern in social_media_patterns.items():
+        if platform != "youtube":
+            found_links = set(re.findall(pattern, combined_text))
+            if platform == "facebook":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_facebook)}
+            elif platform == "instagram":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_instagram)}
+            elif platform == "twitter":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_twitter)}
+            elif platform == "linkedin":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_linkedin)}
+            elif platform == "tiktok":
+                found_links = {link for link in found_links if not any(black in link for black in blacklist_tiktok)}
+            social_data[platform] = ", ".join(sorted(found_links))
+
+    # Extract and filter email addresses
+    emails = list(set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', combined_text)))
+    filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
+
+    # If no email is found, check contact pages
+    if not filtered_emails:
+        contact_pages = ["/contact-us", "/contact", "/contacts"]
+        for page in contact_pages:
+            contact_url = url.rstrip('/') + page
+            print(f"Checking contact page: {contact_url}")
+            contact_emails = extract_emails_from_page(contact_url)
+            if contact_emails:
+                filtered_emails = contact_emails
+                break
+
+    extracted_data = {
+        "website": url,
+        "email": ", ".join(sorted(set(filtered_emails))),
+        **social_data
+    }
+
+    print("Extracted Data:", extracted_data)  # Debugging output
     return extracted_data
 
 @app.route('/')
@@ -138,7 +137,7 @@ def extract():
     if not url:
         return jsonify({"error": "No URL provided"}), 400
     
-    data = extract_phone_and_email(url)
+    data = extract_data(url)
     return jsonify(data)
 
 if __name__ == "__main__":
