@@ -12,7 +12,7 @@ CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
 # Blacklist for email
 blacklist_emails = [", ", ".png", ".jpg", "@example", "domain", "jane.doe@", "jdoe@", "john.doe", "first@", "last@", ".svg", ".webp", "sentry", "company", ".jped", "?", "%", "(", ")", "<", ">", ";", ":", "[", "]", "{", "}", "\\", "|", '"', "'", "!", "#", "$", "^", "&", "*" ]
 # Regex pattern to match emails
-EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})')
+EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zAZ0-9.-]+\.[a-zA-Z]{2,})')
 
 def format_phone_number(phone):
     """Format phone numbers based on the given rules."""
@@ -40,7 +40,11 @@ def extract_phone_from_soup(soup):
             
             # Format the phone number based on the given rules
             formatted_phone = format_phone_number(phone)
-            phone_links.add(formatted_phone)
+            
+            # Check if the phone number has at least 5 digits
+            digits_only = re.sub(r'\D', '', formatted_phone)  # Remove all non-numeric characters
+            if len(digits_only) >= 5:
+                phone_links.add(formatted_phone)
 
     return phone_links
 
