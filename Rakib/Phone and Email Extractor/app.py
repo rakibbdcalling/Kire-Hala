@@ -10,7 +10,7 @@ app = Flask(__name__)
 CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
 
 # Blacklist for email
-blacklist_emails = ['.png', '.jpg', '@example', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company", ".jped"]
+blacklist_emails = [', ', '.png', '.jpg', '@example', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company", ".jped"]
 
 # Regex pattern to match emails
 EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})')
@@ -56,7 +56,7 @@ def extract_email_from_soup(soup):
             email = href[7:].strip()
             email_links.add(email)
 
-    # Extract emails from visible text
+    # Extract emails from visible text using regex
     text = soup.get_text(" ", strip=True)
     matches = EMAIL_REGEX.findall(text)
     for match in matches:
