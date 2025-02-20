@@ -13,7 +13,7 @@ def extract_emails_from_page(url):
     emails = re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', page_content)
     
     # Filter out unwanted emails
-    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp"]
+    blacklist_emails = [", ", ".png", ".jpg", "@example", "domain", "jane.doe@", "jdoe@", "john.doe", "first@", "last@", ".svg", ".webp", "sentry", "company", ".jped", "?", "%", "(", ")", "<", ">", ";", ":", "[", "]", "{", "}", "\\", "|", '"', "'", "!", "#", "$", "^", "&", "*"]
     filtered_emails = [email for email in emails if not any(black.lower() in email.lower() for black in blacklist_emails)]
     
     return filtered_emails
@@ -64,7 +64,6 @@ def extract_data(url):
     }
 
     # Blacklist for social media links to exclude unnecessary URLs
-    blacklist_emails = ['.png', '.jpg', 'example', 'email@', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company"]
     blacklist_facebook = ['/plugins', '/embed', 'facebook.com/tr?id=', '/2008', '/business']
     blacklist_instagram = ['/explore/', 'instagram.com/p/', 'instagram.com/stories/', 'instagram.com/accounts/']
     blacklist_twitter = ['/search', 'twitter.com/explore', 'twitter.com/i/', '/intent']
