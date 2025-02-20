@@ -1,132 +1,141 @@
-import chromedriver_autoinstaller
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoAlertPresentException
-import pandas as pd
-import os
-import time
+from flask import Flask, request, render_template, jsonify
+import requests
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urljoin, unquote
 
-# Setup ChromeDriver
-custom_path = os.path.join(os.getcwd(), "chromedriver")
-os.makedirs(custom_path, exist_ok=True)
-chromedriver_autoinstaller.install(path=custom_path)
+app = Flask(__name__)
 
-# Load data
-data = pd.read_excel("data.xlsx", dtype={'incoming_date': str, 'delivery_last_date': str})
-total_rows = len(data)
+# List of keywords to search for in contact-related URLs
+CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
 
-# Start WebDriver
-driver = webdriver.Chrome()
-driver.get("https://www.bdcallingit.com/web/login")
+# Blacklist for email
+blacklist_emails = [", ", ".png", ".jpg", "@example", "domain", "jane.doe@", "jdoe@", "john.doe", "first@", "last@", ".svg", ".webp", "sentry", "company", ".jped", "?", "%", "(", ")", "<", ">", ";", ":", "[", "]", "{", "}", "\\", "|", '"', "'", "!", "#", "$", "^", "&", "*" ]
+# Regex pattern to match emails
+EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})')
 
-# Login
-driver.find_element(By.ID, "login").send_keys("officesmtsales@gmail.com")
-driver.find_element(By.ID, "password").send_keys("smtechnology")
-driver.find_element(By.CSS_SELECTOR, "button.btn.btn-primary").click()
-time.sleep(2)
+def format_phone_number(phone):
+    """Format phone numbers based on the given rules."""
+    digits = re.sub(r'\D', '', phone)  # Remove all non-numeric characters
+    
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]  # Remove leading '1'
+    
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"  # Format as (000) 000-0000
+    
+    return phone  # Return the phone number as is if it doesn't meet the criteria
 
-wait = WebDriverWait(driver, 5)
+def extract_phone_from_soup(soup):
+    """Extract phone numbers from any href="tel:..." and format them properly."""
+    phone_links = set()
 
-# Function to handle unexpected alerts
-def handle_alert():
+    # Extract phone numbers from any href="tel:..." occurrences
+    for element in soup.find_all(href=True):
+        href = element['href']
+        if href.startswith("tel:"):
+            # Extract the phone number, decode URL encoding, and replace %20 with a space
+            phone = href[4:].strip()
+            phone = unquote(phone).replace("%20", " ")  # Decode URL encoding & replace %20 with space
+            
+            # Format the phone number based on the given rules
+            formatted_phone = format_phone_number(phone)
+            phone_links.add(formatted_phone)
+
+    return phone_links
+
+def extract_email_from_soup(soup):
+    """Extract emails from mailto links and text using regex."""
+    email_links = set()
+
+    # Extract emails from <a href="mailto:..."> links
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if href.startswith("mailto:"):
+            email = href[7:].strip()
+            if not any(black in email for black in blacklist_emails):  # Apply blacklist filter here
+                email_links.add(email)
+
+    # Extract emails from visible text using regex
+    text = soup.get_text(" ", strip=True)
+    matches = EMAIL_REGEX.findall(text)
+    for match in matches:
+        if not any(black in match for black in blacklist_emails):  # Apply blacklist filter here
+            email_links.add(match)
+
+    return email_links
+
+def extract_phone_and_email(url):
+    print(f"Extracting phone and email from: {url}")  # Debugging
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/90.0.4430.93 Safari/537.36"
+        )
+    }
+
     try:
-        alert = driver.switch_to.alert
-        print("Alert detected:", alert.text)
-        alert.dismiss()
-    except NoAlertPresentException:
-        pass  
+        response = requests.get(url, headers=headers, timeout=10)
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+        return {"website": url, "phone": "", "email": ""}
 
-# Log file setup
-with open("log_results.txt", "a") as log_file:
-    remaining_rows = total_rows  # Initialize remaining rows count
+    page_source = response.text
+    soup = BeautifulSoup(page_source, 'html.parser')
 
-    for index, row in data.iterrows():
-        print(f"Remaining: {remaining_rows}")
+    # Extract phone numbers and emails
+    phone_links = extract_phone_from_soup(soup)
+    email_links = extract_email_from_soup(soup)
 
-        driver.get("https://www.bdcallingit.com/portal/sales/create")
-        
-        # Ensure sales_employee_id is not empty
-        sales_employee_id = str(row.get("sales_employee_id", "")).strip()
-        if not sales_employee_id:
-            log_file.write(f"{row['order_number']} - Missing Sales Employee ID\n")
-            remaining_rows -= 1  # Update remaining count
-            print(f"Remaining rows after processing: {remaining_rows}")
-            continue  
+    # If no phone numbers or emails found on the main page, check contact pages
+    if not phone_links or not email_links:
+        print("No phone numbers or emails found on main page; checking contact pages...")
+        contact_links = set()
+        for a in soup.find_all('a', href=True):
+            href = a['href'].lower()
+            if any(keyword in href for keyword in CONTACT_KEYWORDS):
+                full_url = urljoin(url, a['href'])
+                contact_links.add(full_url)
 
-        # Fill form fields
-        driver.find_element(By.ID, "sales_employee_id").send_keys(sales_employee_id)
-        driver.find_element(By.ID, "platform_source").send_keys(str(row["platform_source"]))
-        driver.find_element(By.NAME, "order_source_id").send_keys(row["order_source_id"])
-        driver.find_element(By.ID, "profile_name").send_keys(row["profile_name"])
+        for contact_url in contact_links:
+            try:
+                print(f"Checking contact page: {contact_url}")
+                contact_resp = requests.get(contact_url, headers=headers, timeout=10)
+                contact_soup = BeautifulSoup(contact_resp.text, 'html.parser')
+                contact_phones = extract_phone_from_soup(contact_soup)
+                contact_emails = extract_email_from_soup(contact_soup)
 
-        driver.find_element(By.ID, "tags").click()
-        driver.find_element(By.XPATH, f'//*[@data-value="{row["tags"]}"]').click()
-        driver.find_element(By.ID, "tags").click()
+                # Combine phone numbers and emails from contact pages
+                phone_links = phone_links.union(contact_phones)
+                email_links = email_links.union(contact_emails)
+            except Exception as e:
+                print(f"Error fetching contact page {contact_url}: {e}")
+                continue
 
-        driver.find_element(By.ID, "btn_add_new_client").click()
-        driver.find_element(By.ID, "a_client_user_name").send_keys(row["client_user_id"])
-        driver.find_element(By.ID, "a_country_id").send_keys("United States")
-        driver.find_element(By.ID, "btn_create_new_client").click()
+    # Final extracted data, excluding blacklisted emails
+    extracted_data = {
+        "website": url,
+        "phone": ", ".join(sorted(phone_links)),
+        "email": ", ".join(sorted(email_links))
+    }
 
-        driver.find_element(By.CSS_SELECTOR, ".btn.btn-danger").click()
-        time.sleep(1)
+    print("Extracted Data:", extracted_data)
+    return extracted_data
 
-        driver.find_element(By.ID, "client_user_id").clear()
-        driver.find_element(By.ID, "client_user_id").send_keys(row["client_user_id"])
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-        order_number = row["order_number"]
-        driver.find_element(By.NAME, "order_number").send_keys(order_number)
+@app.route('/extract', methods=['POST'])
+def extract():
+    url = request.json.get("url")
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+    
+    data = extract_phone_and_email(url)
+    return jsonify(data)
 
-        try:
-            error_element = wait.until(EC.visibility_of_element_located((By.ID, "order_number_error")))
-            if "Already Exists" in error_element.text:
-                order_number += "_1"
-                driver.find_element(By.NAME, "order_number").clear()
-                driver.find_element(By.NAME, "order_number").send_keys(order_number)
-                time.sleep(2)
-                error_element = driver.find_element(By.ID, "order_number_error")
-                if "Already Exists" in error_element.text:
-                    order_number = row["order_number"] + "_2"
-                    driver.find_element(By.NAME, "order_number").clear()
-                    driver.find_element(By.NAME, "order_number").send_keys(order_number)
-        except:
-            pass  
-
-        driver.find_element(By.ID, "order_link").send_keys(row["order_link"])
-        driver.find_element(By.NAME, "instruction_sheet_link").send_keys(row["instruction_sheet_link"])
-        driver.find_element(By.ID, "service_type_id").send_keys(row["service_type_id"])
-
-        try:
-            incoming_date = f"{int(row['incoming_date']):08d}"
-            delivery_last_date = f"{int(row['delivery_last_date']):08d}"
-        except ValueError:
-            log_file.write(f"{order_number} - Invalid date format\n")
-            remaining_rows -= 1  
-            print(f"Remaining rows after processing: {remaining_rows}")
-            continue  
-
-        driver.find_element(By.NAME, "incoming_date").send_keys(incoming_date)
-        driver.find_element(By.NAME, "delivery_last_date").send_keys(delivery_last_date, Keys.TAB, "1111p")
-
-        driver.find_element(By.ID, "amount").clear()
-        driver.find_element(By.ID, "amount").send_keys(str(row["amount"]))
-        driver.find_element(By.ID, "percentage").send_keys(str(row["percentage"]))
-
-        driver.find_element(By.CSS_SELECTOR, ".button.button-primary.px-5.py-2").click()
-        time.sleep(1)
-
-        handle_alert()
-
-        try:
-            wait.until(EC.url_contains("/portal/sales/create/status"))
-        except:
-            log_file.write(f"{order_number} - Submission failed\n")
-
-        remaining_rows -= 1  # Update remaining count after successful row processing
-        print(f"Remaining rows after processing: {remaining_rows}")
-
-driver.quit()
-print("Processing completed for all rows.")
+if __name__ == "__main__":
+    app.run(debug=True)
