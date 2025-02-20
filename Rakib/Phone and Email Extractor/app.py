@@ -1,59 +1,67 @@
 from flask import Flask, request, render_template, jsonify
 import requests
 from bs4 import BeautifulSoup
-import json
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, unquote
 
 app = Flask(__name__)
 
 # List of keywords to search for in contact-related URLs
 CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
 
-# Blacklist for email and phone numbers
+# Blacklist for email
 blacklist_emails = ['.png', '.jpg', '@example', 'domain', 'jane.doe@', 'jdoe@', 'john.doe', 'first@', 'last@', ".svg", ".webp", "sentry", "company", ".jped"]
-blacklist_phone = ['/plugins', '/embed', 'phone.com/tr?id=', '/2008']
-
-# Regex pattern to match phone numbers (e.g., 416-979-5000, (416) 979-5000, +1 416 979 5000, etc.)
-PHONE_REGEX = re.compile(
-    r'(\+?\d{1,2}\s*[\-\.\s]?)?'        # Country code (optional)
-    r'(\(?\d{3}\)?[\s\-\.\)]*)'          # Area code with optional parentheses
-    r'(\d{3}[\s\-\.\)]*\d{4})'           # Local number
-)
 
 # Regex pattern to match emails
 EMAIL_REGEX = re.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})')
 
+def format_phone_number(phone):
+    """Format phone numbers based on the given rules."""
+    digits = re.sub(r'\D', '', phone)  # Remove all non-numeric characters
+    
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]  # Remove leading '1'
+    
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"  # Format as (000) 000-0000
+    
+    return phone  # Return the phone number as is if it doesn't meet the criteria
+
 def extract_phone_from_soup(soup):
-    """Extract phone numbers from <a href="tel:..."> links within a BeautifulSoup-parsed page."""
+    """Extract phone numbers from any href="tel:..." and format them properly."""
     phone_links = set()
-    
-    for a in soup.find_all('a', href=True):
-        href = a['href']
+
+    # Extract phone numbers from any href="tel:..." occurrences
+    for element in soup.find_all(href=True):
+        href = element['href']
         if href.startswith("tel:"):
-            # Remove the 'tel:' prefix and any whitespace/newline characters
-            phone = href[4:].replace(" ", "").replace("\n", "")
-            phone_links.add(phone)
-    
+            # Extract the phone number, decode URL encoding, and replace %20 with a space
+            phone = href[4:].strip()
+            phone = unquote(phone).replace("%20", " ")  # Decode URL encoding & replace %20 with space
+            
+            # Format the phone number based on the given rules
+            formatted_phone = format_phone_number(phone)
+            phone_links.add(formatted_phone)
+
     return phone_links
 
 def extract_email_from_soup(soup):
     """Extract emails from mailto links and text using regex."""
     email_links = set()
-    
+
     # Extract emails from <a href="mailto:..."> links
     for a in soup.find_all('a', href=True):
         href = a['href']
         if href.startswith("mailto:"):
             email = href[7:].strip()
             email_links.add(email)
-    
+
     # Extract emails from visible text
     text = soup.get_text(" ", strip=True)
     matches = EMAIL_REGEX.findall(text)
     for match in matches:
         email_links.add(match)
-    
+
     return email_links
 
 def extract_phone_and_email(url):
@@ -83,9 +91,6 @@ def extract_phone_and_email(url):
     # Filter out blacklisted emails
     email_links = {email for email in email_links if not any(black in email for black in blacklist_emails)}
 
-    # Filter out blacklisted phone numbers
-    phone_links = {link for link in phone_links if not any(black in link for black in blacklist_phone)}
-
     # If no phone numbers or emails found on the main page, check contact pages
     if not phone_links or not email_links:
         print("No phone numbers or emails found on main page; checking contact pages...")
@@ -111,7 +116,7 @@ def extract_phone_and_email(url):
                 print(f"Error fetching contact page {contact_url}: {e}")
                 continue
 
-    # Final extracted data, excluding blacklisted emails and phones
+    # Final extracted data, excluding blacklisted emails
     extracted_data = {
         "website": url,
         "phone": ", ".join(sorted(phone_links)),
