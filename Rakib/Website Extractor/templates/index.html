@@ -29,6 +29,7 @@
         <thead>
             <tr>
                 <th>Website</th>
+                <th>Phone</th>
                 <th>E-mail</th>
                 <th>Instagram</th>
                 <th>Facebook</th>
@@ -77,54 +78,49 @@
                         extractedData.push(data);  // Save the data
                         const row = `<tr>
                             <td>${data.website}</td>
+                            <td>${data.phone}</td>
                             <td>${data.email}</td>
-                            <td>${data.instagram}</td>
-                            <td>${data.facebook}</td>
-                            <td>${data.youtube}</td>
-                            <td>${data.linkedin}</td>
-                            <td>${data.twitter}</td>
-                            <td>${data.tiktok}</td>
+                            <td>${data.social_media.instagram}</td>
+                            <td>${data.social_media.facebook}</td>
+                            <td>${data.social_media.youtube}</td>
+                            <td>${data.social_media.linkedin}</td>
+                            <td>${data.social_media.twitter}</td>
+                            <td>${data.social_media.tiktok}</td>
                         </tr>`;
                         document.getElementById("results").innerHTML += row;
                     } else {
-                        console.error(`Failed to fetch data for: ${url}`);
+                        console.error(`Error: ${response.statusText}`);
                     }
-                } catch (error) {
-                    console.error(`Error processing ${url}:`, error);
+                } catch (err) {
+                    console.error("Request error:", err);
                 }
 
-                // Update remaining count and progress bar
                 remaining--;
                 progressBar.value = total - remaining;
-
-                if (remaining > 0) {
-                    loadingMessage.innerText = `Processing... ${remaining} websites remaining`;
-                } else {
-                    loadingMessage.innerText = "Processing complete!";
-                    setTimeout(() => {
-                        loadingMessage.style.display = "none";
-                        progressBar.style.display = "none";
-                    }, 2000);
-                }
+                loadingMessage.innerText = `Processing... ${remaining} websites remaining`;
             }
 
-            // Trigger auto-download of Excel file after extraction
+            loadingMessage.style.display = "none";
+            progressBar.style.display = "none";
+
+            // Export the data automatically after 2 seconds
             setTimeout(() => {
-                exportExcel();  // Ensure the file export happens after the extraction is complete
-            }, 2000);  // Increased delay to ensure data is fully processed before triggering download
+                exportExcel();
+            }, 2000);
         });
 
         // Export data as Excel (using a simple library like SheetJS)
         function exportExcel() {
             const orderedData = extractedData.map(item => ({
-                website: item.website,
-                email: item.email,
-                instagram: item.instagram,
-                facebook: item.facebook,
-                youtube: item.youtube,
-                linkedin: item.linkedin,
-                twitter: item.twitter,
-                tiktok: item.tiktok
+                Website: item.website,
+                Phone: item.phone,
+                E_mail: item.email,
+                Instagram: item.social_media.instagram,
+                Facebook: item.social_media.facebook,
+                YouTube: item.social_media.youtube,
+                LinkedIn: item.social_media.linkedin,
+                Twitter_X: item.social_media.twitter,
+                Tiktok: item.social_media.tiktok
             }));
 
             const wb = XLSX.utils.book_new();
@@ -152,27 +148,25 @@
         // Export data as CSV
         document.getElementById('exportCSV').addEventListener('click', function() {
             const csvRows = [];
-            // Create header row
-            const headers = ['Website', 'Email', 'Instagram', 'Facebook', 'YouTube', 'LinkedIn', 'Twitter/X', 'Tiktok'];
+            const headers = ['Website', 'Phone', 'E-mail', 'Instagram', 'Facebook', 'YouTube', 'LinkedIn', 'Twitter/X', 'Tiktok'];
             csvRows.push(headers.join(','));
 
-            // Create data rows
             extractedData.forEach(row => {
                 const values = [
                     row.website,
+                    row.phone,
                     row.email,
-                    row.instagram,
-                    row.facebook,
-                    row.youtube,
-                    row.linkedin,
-                    row.twitter,
-                    row.tiktok
+                    row.social_media.instagram,
+                    row.social_media.facebook,
+                    row.social_media.youtube,
+                    row.social_media.linkedin,
+                    row.social_media.twitter,
+                    row.social_media.tiktok
                 ];
 
-                // Enclose values that contain commas in double quotes
                 const escapedValues = values.map(value => {
                     if (value && value.includes(',')) {
-                        return `"${value}"`;  // Escape commas
+                        return `"${value}"`;
                     }
                     return value;
                 });
@@ -180,7 +174,6 @@
                 csvRows.push(escapedValues.join(','));
             });
 
-            // Create CSV Blob and download it
             const csvData = csvRows.join('\n');
             const blob = new Blob([csvData], { type: 'text/csv' });
             const url = URL.createObjectURL(blob);
