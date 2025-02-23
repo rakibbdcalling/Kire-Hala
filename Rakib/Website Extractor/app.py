@@ -10,6 +10,7 @@ import pandas as pd
 app = Flask(__name__)
 app.secret_key = "your_secret_key_here"  # Change this to a strong secret key
 app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_PERMANENT"] = False  # Ensure session is not permanent (cleared when browser is closed)
 Session(app)
 
 user_passwords = ["pass1", "pass2", "pass3"]
@@ -25,6 +26,7 @@ def login():
     data = request.json
     if data.get("password") in user_passwords:
         session["authenticated"] = True
+        session.permanent = False  # Make sure the session is not permanent, clears when browser is closed
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid password"}), 401
 
@@ -156,10 +158,6 @@ def extract_phone_and_email(url):
     }
 
     return extracted_data
-
-@app.route('/')
-def index():
-    return render_template('index.html')
 
 @app.route('/extract', methods=['POST'])
 def extract():
