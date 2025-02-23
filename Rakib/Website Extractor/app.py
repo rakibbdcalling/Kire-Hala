@@ -9,8 +9,8 @@ import pandas as pd
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key_here"  # Change this to a strong secret key
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_PERMANENT"] = False  # Ensure session is not permanent (cleared when browser is closed)
+app.config["SESSION_TYPE"] = "filesystem"  # You can use filesystem or other session backends if you like
+app.config["SESSION_PERMANENT"] = False  # Do not make the session permanent, it will expire when the browser is closed
 Session(app)
 
 user_passwords = ["pass1", "pass2", "pass3"]
@@ -26,7 +26,7 @@ def login():
     data = request.json
     if data.get("password") in user_passwords:
         session["authenticated"] = True
-        session.permanent = False  # Make sure the session is not permanent, clears when browser is closed
+        session.permanent = False  # Ensure the session is not permanent, so it expires when the browser is closed
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid password"}), 401
 
