@@ -8,7 +8,7 @@ import json
 import pandas as pd
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key_here"  # Change this to a strong secret key
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback_secret_key")  # Use an environment variable or fallback
 app.config["SESSION_TYPE"] = "filesystem"  # You can use filesystem or other session backends if you like
 app.config["SESSION_PERMANENT"] = False  # Do not make the session permanent, it will expire when the browser is closed
 Session(app)
