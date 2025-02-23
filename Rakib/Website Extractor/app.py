@@ -1,11 +1,3 @@
-from flask import Flask, request, render_template, jsonify, session
-from flask_session import Session
-import requests
-from bs4 import BeautifulSoup
-import re
-from urllib.parse import unquote
-import json
-import pandas as pd
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key_here"  # Change this to a strong secret key
