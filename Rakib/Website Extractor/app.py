@@ -6,36 +6,50 @@ import re
 from urllib.parse import unquote
 import json
 import pandas as pd
+import os
+import logging
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback_secret_key")  # Use an environment variable or fallback
-app.config["SESSION_TYPE"] = "filesystem"  # You can use filesystem or other session backends if you like
-app.config["SESSION_PERMANENT"] = False  # Do not make the session permanent, it will expire when the browser is closed
+
+# Set the secret key using environment variables for production
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "fallback_secret_key")  # Use an environment variable for secret key
+app.config["SESSION_TYPE"] = "filesystem"
+app.config["DEBUG"] = False  # Disable debugging in production
+app.config["ENV"] = "production"
+app.config["SESSION_COOKIE_SECURE"] = True  # Use secure cookies for production (requires HTTPS)
+
+# Initialize session
 Session(app)
 
+# Set up logging for production
+logging.basicConfig(level=logging.INFO)
+
+# Predefined list of valid passwords
 user_passwords = ["pass1", "pass2", "pass3"]
 
+# Index route (home page)
 @app.route('/')
 def index():
     if session.get("authenticated"):
         return render_template('index.html')
     return render_template('password.html')  # Redirect to password input page
 
+# Login route
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
     if data.get("password") in user_passwords:
         session["authenticated"] = True
-        session.permanent = False  # Ensure the session is not permanent, so it expires when the browser is closed
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid password"}), 401
 
+# Logout route
 @app.route('/logout')
 def logout():
     session.pop("authenticated", None)
     return jsonify({"success": True, "message": "Logged out successfully"})
 
-
+# Keywords and blacklist for email and social media extraction
 CONTACT_KEYWORDS = ['contact', 'contact-us', 'contacts']
 BLACKLIST_EMAILS = [
     "@godaddy", ", ", ".png", ".jpg", "@example", "domain", "jane.doe@", "jdoe@", "john.doe", 
@@ -63,8 +77,8 @@ BLACKLIST_SOCIAL_MEDIA = {
     "tiktok": ['/video/', '/discover', 'tiktok.com/hashtag/']
 }
 
+# Helper function to format phone numbers
 def format_phone_number(phone):
-    """Format phone numbers based on the given rules."""
     digits = re.sub(r'\D', '', phone)  # Remove all non-numeric characters
     if len(digits) == 11 and digits.startswith("1"):
         digits = digits[1:]  # Remove leading '1'
@@ -72,10 +86,9 @@ def format_phone_number(phone):
         return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"  # Format as (000) 000-0000
     return phone  # Return the phone number as is if it doesn't meet the criteria
 
+# Helper function to extract phone numbers
 def extract_phone_from_soup(soup):
-    """Extract phone numbers from any href="tel:..." and format them properly."""
     phone_links = set()
-
     for element in soup.find_all(href=True):
         href = element['href']
         if href.startswith("tel:"):
@@ -85,30 +98,26 @@ def extract_phone_from_soup(soup):
             digits_only = re.sub(r'\D', '', formatted_phone)  # Remove all non-numeric characters
             if len(digits_only) >= 5:
                 phone_links.add(formatted_phone)
-
     return phone_links
 
+# Helper function to extract email addresses
 def extract_email_from_soup(soup):
-    """Extract emails from mailto links and text using regex."""
     email_links = set()
-
     for a in soup.find_all('a', href=True):
         href = a['href']
         if href.startswith("mailto:"):
             email = href[7:].strip()
             if not any(black in email for black in BLACKLIST_EMAILS):
                 email_links.add(email)
-
     text = soup.get_text(" ", strip=True)
     matches = EMAIL_REGEX.findall(text)
     for match in matches:
         if not any(black in match for black in BLACKLIST_EMAILS):
             email_links.add(match)
-
     return email_links
 
+# Helper function to extract social media links
 def extract_social_media_links(soup):
-    """Extract social media links from the page."""
     social_media_links = {
         "instagram": set(),
         "facebook": set(),
@@ -117,18 +126,16 @@ def extract_social_media_links(soup):
         "twitter": set(),
         "tiktok": set()
     }
-
     for platform, pattern in SOCIAL_MEDIA_PATTERNS.items():
         for match in re.findall(pattern, str(soup)):
             if any(black in match for black in BLACKLIST_SOCIAL_MEDIA.get(platform, [])):
                 continue
             social_media_links[platform].add(match)
-
     return social_media_links
 
+# Helper function to extract phone numbers, emails, and social media links
 def extract_phone_and_email(url):
     print(f"Extracting phone and email from: {url}")
-
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -136,13 +143,12 @@ def extract_phone_and_email(url):
             "Chrome/90.0.4430.93 Safari/537.36"
         )
     }
-
     try:
         response = requests.get(url, headers=headers, timeout=10)
     except Exception as e:
         print(f"Error fetching {url}: {e}")
         return {"website": url, "phone": "", "email": "", "social_media": {}}
-
+    
     page_source = response.text
     soup = BeautifulSoup(page_source, 'html.parser')
 
@@ -159,14 +165,15 @@ def extract_phone_and_email(url):
 
     return extracted_data
 
+# Route to extract data from a given URL
 @app.route('/extract', methods=['POST'])
 def extract():
     url = request.json.get("url")
     if not url:
         return jsonify({"error": "No URL provided"}), 400
-    
     data = extract_phone_and_email(url)
     return jsonify(data)
 
+# Main entry point
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=False)
