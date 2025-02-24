@@ -183,6 +183,16 @@
             a.click();
         });
     </script>
+    <script>
+    window.onbeforeunload = function() {
+        fetch('/logout', { method: 'GET' }) // This will trigger logout on tab close
+            .then(response => {
+                console.log('Logged out due to tab closure');
+            })
+            .catch(error => console.error('Error logging out:', error));
+    };
+</script>
+
 
     <!-- Load SheetJS library for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
