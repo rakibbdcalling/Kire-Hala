@@ -19,11 +19,11 @@ app.config["DEBUG"] = False  # Disable debugging in production
 app.config["ENV"] = "production"
 app.config["SESSION_COOKIE_SECURE"] = True  # Use secure cookies for production (requires HTTPS)
 
-# Set session to expire immediately after browser is closed
+# Set session to expire immediately after the tab is closed
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=1)  # Forces session to expire immediately
 app.permanent_session_lifetime = timedelta(seconds=1)
 
-# Explicitly clear session cookies when browser is closed
+# Explicitly clear session cookies when tab is closed
 @app.before_request
 def make_session_permanent():
     session.permanent = False  # Make session non-permanent (expires immediately)
@@ -51,7 +51,7 @@ def login():
     data = request.json
     if data.get("password") in user_passwords:
         session["authenticated"] = True
-        session.permanent = True  # Make the session permanent so it won't expire during the current session
+        session.permanent = False  # Make the session non-permanent (expires immediately)
         return jsonify({"success": True})
     return jsonify({"success": False, "message": "Invalid password"}), 401
 
