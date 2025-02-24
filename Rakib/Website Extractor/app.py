@@ -23,6 +23,12 @@ app.config["SESSION_COOKIE_SECURE"] = True  # Use secure cookies for production 
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(seconds=1)  # Forces session to expire immediately
 app.permanent_session_lifetime = timedelta(seconds=1)
 
+# Explicitly clear session cookies when browser is closed
+@app.before_request
+def make_session_permanent():
+    session.permanent = False  # Make session non-permanent (expires immediately)
+    session.modified = True
+
 # Initialize session
 Session(app)
 
