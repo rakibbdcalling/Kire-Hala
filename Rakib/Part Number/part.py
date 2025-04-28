@@ -16,11 +16,10 @@ def extract_part_number(description, excluded_parts):
     new_description = []
     
     for line in lines:
-        match = re.search(r'(?i)\bpart\s*#\s*:?\s*([\w\d\.\-\s]+)', line)
+        match = re.search(r'(?i)\bpart\s*#\s*:?\s*(.+)', line)
         if match:
             part_number = match.group(1).strip()
-            # Ensure part number contains both text and numbers OR is purely numeric OR follows complex patterns
-            if ((any(char.isdigit() for char in part_number) and any(char.isalpha() for char in part_number)) or part_number.isdigit() or re.search(r'^[\w\d\.\-\s]+$', part_number)) and part_number not in excluded_parts:
+            if part_number and part_number not in excluded_parts:
                 extracted_part = part_number
                 continue  # Skip adding this line to new description
         new_description.append(line)
