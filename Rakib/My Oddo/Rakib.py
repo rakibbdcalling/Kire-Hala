@@ -24,7 +24,7 @@ driver = webdriver.Chrome()
 driver.get("https://erp.betopiagroup.com/web/login")
 
 # Login
-driver.find_element(By.ID, "login").send_keys("sohan2992020@gmail.com")
+driver.find_element(By.ID, "login").send_keys("rakib.bdcalling@gmail.com")
 driver.find_element(By.ID, "password").send_keys("smtechnology")
 driver.find_element(By.CSS_SELECTOR, "button.btn.btn-primary").click()
 time.sleep(2)
