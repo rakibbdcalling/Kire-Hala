@@ -107,7 +107,7 @@ with open("log_results.txt", "a") as log_file:
         driver.find_element(By.ID, "amount").send_keys(str(row["amount"]))
         driver.find_element(By.ID, "percentage").send_keys(str(row["percentage"]))
         driver.find_element(By.ID, "crm_tag_ids").send_keys(str(row["tags"]))
-        driver.find_element(By.CSS_SELECTOR, '[id="order_status"]').send_keys("NRA")
+        driver.find_element(By.ID, "order_status").send_keys(str(row["order_status"]))
         driver.find_element(By.ID, "btn_sbmt").click()
         time.sleep(1)
 
